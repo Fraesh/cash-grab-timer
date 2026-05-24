@@ -2,6 +2,7 @@
   const ROBBER_OPTIONS = [1, 2, 3, 4, 5, 6];
   const TIME_OPTIONS = [15, 30, 45, 60];
   const BANK_EMPLOYEES = 2;
+  const TOTAL_ROUNDS = 6;
   const LANGUAGES = ['en', 'de', 'fr'];
   const LANGUAGE_LABELS = {
     en: 'English',
@@ -18,12 +19,11 @@
       robberTeam: 'Robbers',
       bankTeam: 'Bank',
       plusBank: 'Plus 2 bank employees.',
-      timePerPlayer: 'Time per player',
-      rounds: 'Rounds',
+      timePerPlayer: 'Time per figure',
       startGame: 'Start Game',
       round: 'Round',
       turn: 'Turn',
-      players: 'Players',
+      players: 'Figures',
       backToSetup: 'Back to setup',
       start: 'Start',
       stop: 'Stop',
@@ -47,12 +47,11 @@
       robberTeam: 'Bankräuber',
       bankTeam: 'Bank',
       plusBank: 'Plus 2 Bankangestellte.',
-      timePerPlayer: 'Zeit pro Person',
-      rounds: 'Runden',
+      timePerPlayer: 'Zeit pro Spielfigur',
       startGame: 'Spiel starten',
       round: 'Runde',
       turn: 'Zug',
-      players: 'Personen',
+      players: 'Spielfiguren',
       backToSetup: 'Zurueck zur Einrichtung',
       start: 'Start',
       stop: 'Stopp',
@@ -76,12 +75,11 @@
       robberTeam: 'Braqueurs',
       bankTeam: 'Banque',
       plusBank: 'Plus 2 employes de banque.',
-      timePerPlayer: 'Temps par joueur',
-      rounds: 'Manches',
+      timePerPlayer: 'Temps par figurine',
       startGame: 'Commencer',
       round: 'Manche',
       turn: 'Tour',
-      players: 'Joueurs',
+      players: 'Figurines',
       backToSetup: 'Retour aux reglages',
       start: 'Start',
       stop: 'Stop',
@@ -102,7 +100,6 @@
   let language = 'en';
   let robbers = 2;
   let secondsPerPlayer = 30;
-  let totalRounds = 6;
   let round = 1;
   let turn = 'robbers';
   let running = false;
@@ -110,6 +107,7 @@
   let remaining = 0;
   let timerId;
   let advanceTimeoutId;
+  let countdownBeepTimeoutId;
   let lastSignalSecond = null;
   let audioContext;
 
@@ -119,12 +117,6 @@
   $: turnDuration = activePlayers * secondsPerPlayer;
   $: progress = turnDuration > 0 ? ((turnDuration - remaining) / turnDuration) * 100 : 0;
   $: turnLabel = t.turnLabel(round, teamLabel.toLowerCase());
-
-  function clampRounds(value) {
-    const parsed = Number(value);
-    if (!Number.isFinite(parsed)) return 6;
-    return Math.min(20, Math.max(1, Math.round(parsed)));
-  }
 
   function formatTime(value) {
     const minutes = Math.floor(value / 60);
@@ -164,7 +156,7 @@
   }
 
   function playCountdownTick() {
-    playTone({ frequency: 860, duration: 0.055, type: 'square', volume: 0.14 });
+    playTone({ frequency: 860, duration: 0.045, type: 'square', volume: 0.12 });
   }
 
   function playBell() {
@@ -176,6 +168,32 @@
     playTone({ frequency: 392, duration: 0.08, type: 'triangle', volume: 0.16 });
   }
 
+  function clearCountdownBeeps() {
+    window.clearTimeout(countdownBeepTimeoutId);
+  }
+
+  function countdownBeepDelay() {
+    const secondsLeft = Math.max(0, Math.min(30, remaining));
+    const urgency = (30 - secondsLeft) / 30;
+    return Math.max(170, 1050 - urgency * 880);
+  }
+
+  function scheduleCountdownBeeps() {
+    clearCountdownBeeps();
+
+    if (!running || advancing) return;
+
+    if (remaining > 30) {
+      countdownBeepTimeoutId = window.setTimeout(scheduleCountdownBeeps, (remaining - 30) * 1000);
+      return;
+    }
+
+    if (remaining > 0) {
+      playCountdownTick();
+      countdownBeepTimeoutId = window.setTimeout(scheduleCountdownBeeps, countdownBeepDelay());
+    }
+  }
+
   function startGame() {
     round = 1;
     turn = 'robbers';
@@ -183,6 +201,7 @@
     running = false;
     advancing = false;
     window.clearTimeout(advanceTimeoutId);
+    clearCountdownBeeps();
     lastSignalSecond = null;
     screen = 'game';
   }
@@ -195,11 +214,13 @@
     lastSignalSecond = remaining;
     window.clearInterval(timerId);
     timerId = window.setInterval(tick, 1000);
+    scheduleCountdownBeeps();
   }
 
   function stopTurn() {
     if (advancing) return;
     window.clearInterval(timerId);
+    clearCountdownBeeps();
     running = false;
     advanceTurn();
   }
@@ -217,6 +238,7 @@
 
     if (remaining <= 0) {
       window.clearInterval(timerId);
+      clearCountdownBeeps();
       running = false;
       advancing = true;
       remaining = 0;
@@ -227,11 +249,9 @@
 
     const elapsed = turnDuration - remaining;
     const isPlayerBoundary = elapsed > 0 && elapsed < turnDuration && elapsed % secondsPerPlayer === 0;
-    const isLastPlayerInterval = remaining <= secondsPerPlayer;
+    const isFinalCountdown = remaining <= 30;
 
-    if (isLastPlayerInterval) {
-      playCountdownTick();
-    } else if (isPlayerBoundary && lastSignalSecond !== remaining) {
+    if (!isFinalCountdown && isPlayerBoundary && lastSignalSecond !== remaining) {
       playIntervalTick();
     }
 
@@ -241,6 +261,7 @@
   function advanceTurn() {
     window.clearInterval(timerId);
     window.clearTimeout(advanceTimeoutId);
+    clearCountdownBeeps();
     running = false;
     advancing = false;
     lastSignalSecond = null;
@@ -251,7 +272,7 @@
       return;
     }
 
-    if (round >= totalRounds) {
+    if (round >= TOTAL_ROUNDS) {
       screen = 'done';
       remaining = 0;
       return;
@@ -265,6 +286,7 @@
   function resetToSetup() {
     window.clearInterval(timerId);
     window.clearTimeout(advanceTimeoutId);
+    clearCountdownBeeps();
     running = false;
     advancing = false;
     screen = 'setup';
@@ -337,22 +359,12 @@
           </div>
         </fieldset>
 
-        <label class="number-field">
-          <span>{t.rounds}</span>
-          <input
-            type="number"
-            min="1"
-            max="20"
-            value={totalRounds}
-            on:change={(event) => (totalRounds = clampRounds(event.currentTarget.value))}
-          />
-        </label>
       </div>
 
       <div class="summary-strip">
         <span>{t.summaryRobbers(formatTime(robbers * secondsPerPlayer))}</span>
         <span>{t.summaryBank(formatTime(BANK_EMPLOYEES * secondsPerPlayer))}</span>
-        <span>{t.summaryRounds(totalRounds)}</span>
+        <span>{t.summaryRounds(TOTAL_ROUNDS)}</span>
       </div>
 
       <button class="primary-action" type="button" on:click={startGame}>
@@ -368,7 +380,7 @@
       </button>
       <div>
         <p>{t.round}</p>
-        <strong>{round} / {totalRounds}</strong>
+        <strong>{round} / {TOTAL_ROUNDS}</strong>
       </div>
       <div>
         <p>{t.turn}</p>
@@ -403,7 +415,7 @@
       <div class="brand-mark" aria-hidden="true">$</div>
       <p class="eyebrow">{t.finalBell}</p>
       <h1>{t.gameComplete}</h1>
-      <p class="lede">{t.allRoundsFinished(totalRounds)}</p>
+      <p class="lede">{t.allRoundsFinished(TOTAL_ROUNDS)}</p>
       <div class="done-actions">
         <button class="primary-action" type="button" on:click={replayGame}>{t.playAgain}</button>
         <button class="secondary-action" type="button" on:click={resetToSetup}>{t.changeSetup}</button>
